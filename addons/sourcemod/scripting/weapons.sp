@@ -36,7 +36,7 @@ public Plugin myinfo =
 	name = "Weapons & Knives",
 	author = "kgns - wasdzone",
 	description = "All in one custom weapon management",
-	version = "1.0.0",
+	version = "1.0.6",
 	url = "http://www.wasdzone.com"
 };
 
@@ -44,6 +44,7 @@ public void OnPluginStart()
 {
 	LoadTranslations("weapons.phrases");
 	
+	g_Cvar_DBConnection = CreateConVar("sm_weapons_db_connection", "storage-local", "Database connection name in databases.cfg to use");
 	g_Cvar_TablePrefix = CreateConVar("sm_weapons_table_prefix", "", "Prefix for database table (example: 'xyz_')");
 	g_Cvar_ChatPrefix = CreateConVar("sm_weapons_chat_prefix", "[wasdzone]", "Prefix for chat messages");
 	g_Cvar_KnifeStatTrakMode = CreateConVar("sm_weapons_knife_stattrak_mode", "0", "0: All knives show the same StatTrak counter (total knife kills) 1: Each type of knife shows its own separate StatTrak counter");
@@ -53,10 +54,6 @@ public void OnPluginStart()
 	g_Cvar_FloatIncrementSize = CreateConVar("sm_weapons_float_increment_size", "0.05", "Increase/Decrease by value for weapon float");
 	
 	AutoExecConfig(true, "weapons");
-	
-	GetConVarString(g_Cvar_TablePrefix, g_TablePrefix, sizeof(g_TablePrefix));
-	
-	Database.Connect(SQLConnectCallback, "weapons");
 	
 	RegConsoleCmd("buyammo1", CommandWeaponSkins);
 	RegConsoleCmd("sm_ws", CommandWeaponSkins);
@@ -68,10 +65,16 @@ public void OnPluginStart()
 	
 	PTaH(PTaH_GiveNamedItemPre, Hook, GiveNamedItemPre);
 	PTaH(PTaH_GiveNamedItem, Hook, GiveNamedItem);
+	//PTaH(PTaH_WeaponCanUse, Hook, WeaponCanUse);
 }
 
-public void OnMapStart()
+public void OnConfigsExecuted()
 {
+	GetConVarString(g_Cvar_DBConnection, g_DBConnection, sizeof(g_DBConnection));
+	GetConVarString(g_Cvar_TablePrefix, g_TablePrefix, sizeof(g_TablePrefix));
+	
+	Database.Connect(SQLConnectCallback, g_DBConnection);
+	
 	g_Cvar_ChatPrefix.GetString(g_ChatPrefix, sizeof(g_ChatPrefix));
 	g_iKnifeStatTrakMode = g_Cvar_KnifeStatTrakMode.IntValue;
 	g_iEnableFloat = g_Cvar_EnableFloat.IntValue;
@@ -120,7 +123,13 @@ public Action CommandNameTag(int client, int args)
 		ReplyToCommand(client, "%s %T", g_ChatPrefix, "NameTagDisabled", client);
 		return Plugin_Handled;
 	}
-	
+
+	if(GetTime() - g_iNameTagTime[client] < 2)
+	{
+		ReplyToCommand(client, "%s %T", g_ChatPrefix, "DontSpamNameTag", client);
+		return Plugin_Handled;
+	}
+
 	if(args < 1)
 	{
 		ReplyToCommand(client, "%s %T", g_ChatPrefix, "NameTagNeedsParams", client);
@@ -134,10 +143,7 @@ public Action CommandNameTag(int client, int args)
 	{
 		int entity = GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon");
 		if (entity != -1)
-		{
-			char weaponClass[32];
-			GetWeaponClass(entity, weaponClass, sizeof(weaponClass));
-			
+		{			
 			int index = GetWeaponIndex(entity);
 			if (index > -1)
 			{
@@ -152,10 +158,14 @@ public Action CommandNameTag(int client, int args)
 				db.Escape(nameTag, escaped, sizeof(escaped));
 				
 				char weaponName[32];
+				char weaponClass[32];
+				GetWeaponClass(entity, weaponClass, sizeof(weaponClass));
 				RemoveWeaponPrefix(weaponClass, weaponName, sizeof(weaponName));
 				
 				Format(updateFields, sizeof(updateFields), "%s_tag = '%s'", weaponName, escaped);
 				UpdatePlayerData(client, updateFields);
+				
+				g_iNameTagTime[client] = GetTime();
 			}
 		}
 	}
@@ -223,9 +233,6 @@ public void OnClientDisconnect(int client)
 
 public void SetWeaponProps(int client, int entity)
 {
-	char weaponClass[32];
-	GetWeaponClass(entity, weaponClass, sizeof(weaponClass));
-	
 	int index = GetWeaponIndex(entity);
 	if (index > -1 && g_iSkins[client][index] != 0)
 	{
@@ -233,7 +240,7 @@ public void SetWeaponProps(int client, int entity)
 		SetEntProp(entity, Prop_Send, "m_nFallbackPaintKit", g_iSkins[client][index] == -1 ? GetRandomSkin(client, index) : g_iSkins[client][index]);
 		SetEntPropFloat(entity, Prop_Send, "m_flFallbackWear", g_iEnableFloat == 0 || g_fFloatValue[client][index] == 0.0 ? 0.000001 : g_fFloatValue[client][index] == 1.0 ? 0.999999 : g_fFloatValue[client][index]);
 		SetEntProp(entity, Prop_Send, "m_nFallbackSeed", GetRandomInt(0, 8192));
-		if(!IsKnifeClass(weaponClass))
+		if(!IsKnife(entity))
 		{
 			if(g_iEnableStatTrak == 1)
 			{
@@ -258,71 +265,74 @@ public void SetWeaponProps(int client, int entity)
 
 void RefreshWeapon(int client, int index, bool defaultKnife = false)
 {
-	bool equiptaser = false;
-	for(int i = 0; i < 3; i++)
+	int size = GetEntPropArraySize(client, Prop_Send, "m_hMyWeapons");
+	
+	for (int i = 0; i < size; i++)
 	{
-		int weapon = GetPlayerWeaponSlot(client, i);
-		if (weapon > -1)
+		int weapon = GetEntPropEnt(client, Prop_Send, "m_hMyWeapons", i);
+		if (IsValidWeapon(weapon))
 		{
-			int weaponIndex = GetWeaponIndex(weapon);
-			if ((weaponIndex == index && !defaultKnife) || (i == CS_SLOT_KNIFE && (defaultKnife || IsKnifeClass(g_WeaponClasses[index]))))
+			bool isKnife = IsKnife(weapon);
+			if ((!defaultKnife && GetWeaponIndex(weapon) == index) || (isKnife && (defaultKnife || IsKnifeClass(g_WeaponClasses[index]))))
 			{
 				int clip = -1;
 				int ammo = -1;
 				int offset = -1;
-				while (weapon > -1)
-				{
-					if (GetEntProp(weapon, Prop_Send, "m_iItemDefinitionIndex") == 31)
-						equiptaser = true;
+				int reserve = -1;
 					
-					if (i != CS_SLOT_KNIFE)
-					{
-						offset = FindDataMapInfo(client, "m_iAmmo") + (GetEntProp(weapon, Prop_Data, "m_iPrimaryAmmoType") * 4);
-						ammo = GetEntData(client, offset);
-						clip = GetEntProp(weapon, Prop_Send, "m_iClip1");
-					}
-					RemovePlayerItem(client, weapon);
-					AcceptEntityInput(weapon, "Kill");
-					weapon = GetPlayerWeaponSlot(client, i);
+				if (!isKnife)
+				{
+					offset = FindDataMapInfo(client, "m_iAmmo") + (GetEntProp(weapon, Prop_Data, "m_iPrimaryAmmoType") * 4);
+					ammo = GetEntData(client, offset);
+					clip = GetEntProp(weapon, Prop_Send, "m_iClip1");
+					reserve = GetEntProp(weapon, Prop_Send, "m_iPrimaryReserveAmmoCount");
 				}
 				
-				if (i != CS_SLOT_KNIFE)
+				RemovePlayerItem(client, weapon);
+				AcceptEntityInput(weapon, "KillHierarchy");
+				
+				if (!isKnife)
 				{
 					weapon = GivePlayerItem(client, g_WeaponClasses[index]);
-					if (offset != -1)
+					if (clip != -1)
 					{
-						if (clip != -1)
-						{
-							SetEntProp(weapon, Prop_Send, "m_iClip1", clip);
-						}
-						if (ammo != -1)
-						{
-							DataPack pack;
-							CreateDataTimer(0.1, ReserveAmmoTimer, pack);
-							pack.WriteCell(GetClientUserId(client));
-							pack.WriteCell(offset);
-							pack.WriteCell(ammo);
-						}
+						SetEntProp(weapon, Prop_Send, "m_iClip1", clip);
+					}
+					
+					if (reserve != -1)
+					{
+						SetEntProp(weapon, Prop_Send, "m_iPrimaryReserveAmmoCount", reserve);
+					}
+					
+					if (offset != -1 && ammo != -1)
+					{
+						DataPack pack;
+						
+						CreateDataTimer(0.1, ReserveAmmoTimer, pack);
+						pack.WriteCell(GetClientUserId(client));
+						pack.WriteCell(offset);
+						pack.WriteCell(ammo);
 					}
 				}
 				else
 				{
-					weapon = GivePlayerItem(client, "weapon_knife");
+					GivePlayerItem(client, "weapon_knife");
 				}
-				if (equiptaser) GivePlayerItem(client, "weapon_taser");
+				
 				break;
 			}
 		}
 	}
 }
 
-public Action ReserveAmmoTimer(Handle timer, Handle pack)
+public Action ReserveAmmoTimer(Handle timer, DataPack pack)
 {
-	ResetPack(pack);
-	int clientIndex = GetClientOfUserId(ReadPackCell(pack));
-	int offset = ReadPackCell(pack);
-	int ammo = ReadPackCell(pack);
+	pack.Reset();
 	
+	int clientIndex = GetClientOfUserId(pack.ReadCell());
+	int offset = pack.ReadCell();
+	int ammo = pack.ReadCell();
+
 	if(clientIndex > 0 && IsClientInGame(clientIndex))
 	{
 		SetEntData(clientIndex, offset, ammo, 4, true);

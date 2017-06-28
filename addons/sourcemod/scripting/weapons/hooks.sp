@@ -53,13 +53,15 @@ public void GiveNamedItem(int client, const char[] classname, const CEconItemVie
 				g_smWeaponDefIndex.GetValue(g_WeaponClasses[g_iKnife[client]], defIndex);
 				char knifeClassName[32];
 				GetWeaponClass(entity, knifeClassName, sizeof(knifeClassName));
-				if(!StrEqual(knifeClassName, g_WeaponClasses[g_iKnife[client]]))
+				CEconItemView playerItem = PTaH_GetItemInLoadout(client, GetClientTeam(client), 0);
+				int playerKnifeDefIndex = playerItem.GetItemDefinition().GetDefinitionIndex();
+				if(!StrEqual(knifeClassName, g_WeaponClasses[g_iKnife[client]]) || defIndex == playerKnifeDefIndex)
 				{
 					float origin[3], angles[3];
 					GetClientAbsOrigin(client, origin);
 					GetClientAbsAngles(client, angles);
 					RemovePlayerItem(client, entity);
-					AcceptEntityInput(entity, "Kill");
+					AcceptEntityInput(entity, "KillHierarchy");
 					entity = PTaH_SpawnItemFromDefIndex(defIndex, origin, angles);
 				}
 				EquipPlayerWeapon(client, entity);
@@ -71,9 +73,6 @@ public void GiveNamedItem(int client, const char[] classname, const CEconItemVie
 
 public Action OnTakeDamageAlive(int victim, int &attacker, int &inflictor, float &damage, int &damagetype, int &weapon, float damageForce[3], float damagePosition[3])
 {
-	if (g_iEnableStatTrak == 0)
-		return Plugin_Continue;
-		
 	if (float(GetClientHealth(victim)) - damage > 0.0)
 		return Plugin_Continue;
 		
@@ -114,4 +113,11 @@ public Action OnTakeDamageAlive(int victim, int &attacker, int &inflictor, float
 	Format(updateFields, sizeof(updateFields), "%s_trak_count = %d", weaponName, g_iStatTrakCount[attacker][index]);
 	UpdatePlayerData(attacker, updateFields);
 	return Plugin_Continue;
+}
+
+public bool WeaponCanUse(int client, int weapon, bool pickup)
+{
+	if (IsValidClient(client) && IsKnife(weapon))
+		return true;
+	return pickup;
 }

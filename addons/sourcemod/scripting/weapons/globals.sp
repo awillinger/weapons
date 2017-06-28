@@ -37,6 +37,9 @@ Database db = null;
 
 char configPath[PLATFORM_MAX_PATH];
 
+ConVar g_Cvar_DBConnection;
+char g_DBConnection[32];
+
 ConVar g_Cvar_TablePrefix;
 char g_TablePrefix[10];
 
@@ -66,6 +69,7 @@ char g_NameTag[MAXPLAYERS+1][sizeof(g_WeaponClasses)][128];
 float g_fFloatValue[MAXPLAYERS+1][sizeof(g_WeaponClasses)];
 int g_iIndex[MAXPLAYERS+1] = { 0, ... };
 Handle g_FloatTimer[MAXPLAYERS+1] = { INVALID_HANDLE, ... };
+int g_iNameTagTime[MAXPLAYERS+1] = { 0, ... };
 int g_iSteam32[MAXPLAYERS+1] = { 0, ... };
 
 int g_iKnife[MAXPLAYERS+1] = { 0, ... };

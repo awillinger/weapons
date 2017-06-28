@@ -38,7 +38,11 @@ public int WeaponsMenuHandler(Menu menu, MenuAction action, int client, int sele
 				
 				RefreshWeapon(client, index);
 				
-				menu.DisplayAt(client, GetMenuSelectionPosition(), MENU_TIME_FOREVER);
+				DataPack pack;
+				CreateDataTimer(0.5, WeaponsMenuTimer, pack);
+				pack.WriteCell(menu);
+				pack.WriteCell(client);
+				pack.WriteCell(GetMenuSelectionPosition());
 			}
 		}
 		case MenuAction_DisplayItem:
@@ -70,6 +74,19 @@ public int WeaponsMenuHandler(Menu menu, MenuAction action, int client, int sele
 		}
 	}
 	return 0;
+}
+
+public Action WeaponsMenuTimer(Handle timer, DataPack pack)
+{
+	ResetPack(pack);
+	Menu menu = pack.ReadCell();
+	int clientIndex = pack.ReadCell();
+	int menuSelectionPosition = pack.ReadCell();
+	
+	if(IsClientInGame(clientIndex))
+	{
+		menu.DisplayAt(clientIndex, menuSelectionPosition, MENU_TIME_FOREVER);
+	}
 }
 
 public int WeaponMenuHandler(Menu menu, MenuAction action, int client, int selection)
@@ -133,7 +150,7 @@ public Action StatTrakMenuTimer(Handle timer, int client)
 
 Menu CreateFloatMenu(int client)
 {
-	char buffer[20];
+	char buffer[60];
 	Menu menu = new Menu(FloatMenuHandler);
 	
 	float fValue = g_fFloatValue[client][g_iIndex[client]];
@@ -215,12 +232,12 @@ public int FloatMenuHandler(Menu menu, MenuAction action, int client, int select
 	}
 }
 
-public Action FloatTimer(Handle timer, Handle pack)
+public Action FloatTimer(Handle timer, DataPack pack)
 {
 
 	ResetPack(pack);
-	int clientIndex = ReadPackCell(pack);
-	int index = ReadPackCell(pack);
+	int clientIndex = pack.ReadCell();
+	int index = pack.ReadCell();
 	
 	if(IsClientInGame(clientIndex))
 	{
@@ -513,7 +530,7 @@ public int MainMenuHandler(Menu menu, MenuAction action, int client, int selecti
 
 Menu CreateMainMenu(int client)
 {
-	char buffer[30];
+	char buffer[60];
 	Menu menu = new Menu(MainMenuHandler, MENU_ACTIONS_DEFAULT);
 	
 	menu.SetTitle("%T", "WSMenuTitle", client);
@@ -524,12 +541,14 @@ Menu CreateMainMenu(int client)
 	{
 		char weaponClass[32];
 		char weaponName[32];
-		for(int i = 0; i < 3; i++)
+		
+		int size = GetEntPropArraySize(client, Prop_Send, "m_hMyWeapons");
+	
+		for (int i = 0; i < size; i++)
 		{
-			int weaponEntity = GetPlayerWeaponSlot(client, i);
-			if(weaponEntity != -1)
+			int weaponEntity = GetEntPropEnt(client, Prop_Send, "m_hMyWeapons", i);
+			if(weaponEntity != -1 && GetWeaponClass(weaponEntity, weaponClass, sizeof(weaponClass)))
 			{
-				GetWeaponClass(weaponEntity, weaponClass, sizeof(weaponClass));
 				Format(weaponName, sizeof(weaponName), "%T", weaponClass, client);
 				menu.AddItem(weaponClass, weaponName, (i == CS_SLOT_KNIFE && g_iKnife[client] == 0) ? ITEMDRAW_DISABLED : ITEMDRAW_DEFAULT);
 			}
@@ -543,7 +562,7 @@ Menu CreateKnifeMenu(int client)
 	Menu menu = new Menu(KnifeMenuHandler);
 	menu.SetTitle("%T", "KnifeMenuTitle", client);
 	
-	char buffer[30];
+	char buffer[60];
 	Format(buffer, sizeof(buffer), "%T", "OwnKnife", client);
 	menu.AddItem("0", buffer, g_iKnife[client] != 0 ? ITEMDRAW_DEFAULT : ITEMDRAW_DISABLED);
 	Format(buffer, sizeof(buffer), "%T", "weapon_knife_karambit", client);
