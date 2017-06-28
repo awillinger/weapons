@@ -19,14 +19,17 @@ void GetPlayerData(int client)
 {
 	char steamid[32];
 	GetClientAuthId(client, AuthId_Steam2, steamid, sizeof(steamid), true);
+	
 	char query[255];
 	FormatEx(query, sizeof(query), "SELECT * FROM %sweapons WHERE steamid = '%s'", g_TablePrefix, steamid);
-	db.Query(T_GetPlayerDataCallback, query, client);
+	
+	db.Query(T_GetPlayerDataCallback, query, GetClientUserId(client));
 }
 
-public void T_GetPlayerDataCallback(Database database, DBResultSet results, const char[] error, int client)
+public void T_GetPlayerDataCallback(Database database, DBResultSet results, const char[] error, int userid)
 {
-	if(IsValidClient(client))
+	int clientIndex = GetClientOfUserId(userid);
+	if(IsValidClient(clientIndex))
 	{
 		if (results == null)
 		{
@@ -35,19 +38,22 @@ public void T_GetPlayerDataCallback(Database database, DBResultSet results, cons
 		else if (results.RowCount == 0)
 		{
 			char steamid[32];
-			GetClientAuthId(client, AuthId_Steam2, steamid, sizeof(steamid), true);
+			GetClientAuthId(clientIndex, AuthId_Steam2, steamid, sizeof(steamid), true);
+			
 			char query[255];
 			FormatEx(query, sizeof(query), "INSERT INTO %sweapons (steamid) VALUES ('%s')", g_TablePrefix, steamid);
+			
 			db.Query(T_InsertCallback, query);
 			for(int i = 0; i < sizeof(g_WeaponClasses); i++)
 			{
-				g_iSkins[client][i] = 0;
-				g_iStatTrak[client][i] = 0;
-				g_iStatTrakCount[client][i] = 0;
-				g_NameTag[client][i] = "";
-				g_fFloatValue[client][i] = 0.0;
+				g_iSkins[clientIndex][i] = 0;
+				g_iStatTrak[clientIndex][i] = 0;
+				g_iStatTrakCount[clientIndex][i] = 0;
+				g_NameTag[clientIndex][i] = "";
+				g_fFloatValue[clientIndex][i] = 0.0;
 			}
-			g_iKnife[client] = 0;
+			
+			g_iKnife[clientIndex] = 0;
 		}
 		else
 		{
@@ -55,13 +61,14 @@ public void T_GetPlayerDataCallback(Database database, DBResultSet results, cons
 			{
 				for(int i = 2, j = 0; j < sizeof(g_WeaponClasses); i += 5, j++) 
 				{
-					g_iSkins[client][j] = results.FetchInt(i);
-					g_fFloatValue[client][j] = results.FetchFloat(i + 1);
-					g_iStatTrak[client][j] = results.FetchInt(i + 2);
-					g_iStatTrakCount[client][j] = results.FetchInt(i + 3);
-					results.FetchString(i + 4, g_NameTag[client][j], 128);
+					g_iSkins[clientIndex][j] = results.FetchInt(i);
+					g_fFloatValue[clientIndex][j] = results.FetchFloat(i + 1);
+					g_iStatTrak[clientIndex][j] = results.FetchInt(i + 2);
+					g_iStatTrakCount[clientIndex][j] = results.FetchInt(i + 3);
+					results.FetchString(i + 4, g_NameTag[clientIndex][j], 128);
 				}
-				g_iKnife[client] = results.FetchInt(1);
+				
+				g_iKnife[clientIndex] = results.FetchInt(1);
 			}
 		}
 	}
@@ -71,9 +78,11 @@ void UpdatePlayerData(int client, char[] updateFields)
 {
 	char steamid[32];
 	GetClientAuthId(client, AuthId_Steam2, steamid, sizeof(steamid), true);
+	
 	char query[255];
 	FormatEx(query, sizeof(query), "UPDATE %sweapons SET %s WHERE steamid = '%s'", g_TablePrefix, updateFields, steamid);
-	db.Query(T_UpdatePlayerDataCallback, query, client);
+	
+	db.Query(T_UpdatePlayerDataCallback, query, GetClientUserId(client));
 }
 
 public void T_UpdatePlayerDataCallback(Database database, DBResultSet results, const char[] error, int client)

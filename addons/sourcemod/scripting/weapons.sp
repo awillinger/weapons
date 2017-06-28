@@ -79,6 +79,7 @@ public void OnMapStart()
 	g_iEnableStatTrak = g_Cvar_EnableStatTrak.IntValue;
 	g_fFloatIncrementSize = g_Cvar_FloatIncrementSize.FloatValue;
 	g_iFloatIncrementPercentage = RoundFloat(g_fFloatIncrementSize * 100.0);
+	
 	ReadConfig();
 }
 
@@ -88,7 +89,8 @@ public Action CommandWeaponSkins(int client, int args)
 	{
 		CreateMainMenu(client).Display(client, MENU_TIME_FOREVER);
 	}
-	return Plugin_Continue;
+	
+	return Plugin_Handled;
 }
 
 public Action CommandKnife(int client, int args)
@@ -97,7 +99,8 @@ public Action CommandKnife(int client, int args)
 	{
 		CreateKnifeMenu(client).Display(client, MENU_TIME_FOREVER);
 	}
-	return Plugin_Continue;
+	
+	return Plugin_Handled;
 }
 
 public Action CommandWSLang(int client, int args)
@@ -106,7 +109,8 @@ public Action CommandWSLang(int client, int args)
 	{
 		CreateLanguageMenu(client).Display(client, MENU_TIME_FOREVER);
 	}
-	return Plugin_Continue;
+	
+	return Plugin_Handled;
 }
 
 public Action CommandNameTag(int client, int args)
@@ -116,11 +120,13 @@ public Action CommandNameTag(int client, int args)
 		ReplyToCommand(client, "%s %T", g_ChatPrefix, "NameTagDisabled", client);
 		return Plugin_Handled;
 	}
+	
 	if(args < 1)
 	{
 		ReplyToCommand(client, "%s %T", g_ChatPrefix, "NameTagNeedsParams", client);
 		return Plugin_Handled;
 	}
+	
 	char nameTag[128];
 	GetCmdArgString(nameTag, sizeof(nameTag));
 	
@@ -131,8 +137,8 @@ public Action CommandNameTag(int client, int args)
 		{
 			char weaponClass[32];
 			GetWeaponClass(entity, weaponClass, sizeof(weaponClass));
-			int index = GetWeaponIndex(entity);
 			
+			int index = GetWeaponIndex(entity);
 			if (index > -1)
 			{
 				CleanNameTag(nameTag, sizeof(nameTag));
@@ -144,14 +150,17 @@ public Action CommandNameTag(int client, int args)
 				char updateFields[300];
 				char escaped[257];
 				db.Escape(nameTag, escaped, sizeof(escaped));
+				
 				char weaponName[32];
 				RemoveWeaponPrefix(weaponClass, weaponName, sizeof(weaponName));
+				
 				Format(updateFields, sizeof(updateFields), "%s_tag = '%s'", weaponName, escaped);
 				UpdatePlayerData(client, updateFields);
 			}
 		}
 	}
-	return Plugin_Continue;
+	
+	return Plugin_Handled;
 }
 
 public void OnClientPutInServer(int client)
@@ -175,13 +184,17 @@ public void OnClientPostAdminCheck(int client)
 		char temp[20];
 		GetClientAuthId(client, AuthId_Steam3, steam32, sizeof(steam32));
 		strcopy(temp, sizeof(temp), steam32[5]);
+		
 		int index;
 		if((index = StrContains(temp, "]")) > -1)
 		{
 			temp[index] = '\0';
 		}
+		
 		g_iSteam32[client] = StringToInt(temp);
+		
 		GetPlayerData(client);
+		
 		QueryClientConVar(client, "cl_language", ConVarCallBack);
 	}
 }
@@ -212,6 +225,7 @@ public void SetWeaponProps(int client, int entity)
 {
 	char weaponClass[32];
 	GetWeaponClass(entity, weaponClass, sizeof(weaponClass));
+	
 	int index = GetWeaponIndex(entity);
 	if (index > -1 && g_iSkins[client][index] != 0)
 	{
@@ -235,6 +249,7 @@ public void SetWeaponProps(int client, int entity)
 		}
 		if (g_iEnableNameTag == 1 && strlen(g_NameTag[client][index]) > 0)
 			SetEntDataString(entity, FindSendPropInfo("CBaseAttributableItem", "m_szCustomName"), g_NameTag[client][index], 128);
+			
 		SetEntProp(entity, Prop_Send, "m_iAccountID", g_iSteam32[client]);
 		SetEntPropEnt(entity, Prop_Send, "m_hOwnerEntity", client);
 		SetEntPropEnt(entity, Prop_Send, "m_hPrevOwner", -1);
@@ -284,7 +299,7 @@ void RefreshWeapon(int client, int index, bool defaultKnife = false)
 						{
 							DataPack pack;
 							CreateDataTimer(0.1, ReserveAmmoTimer, pack);
-							pack.WriteCell(client);
+							pack.WriteCell(GetClientUserId(client));
 							pack.WriteCell(offset);
 							pack.WriteCell(ammo);
 						}
@@ -304,11 +319,11 @@ void RefreshWeapon(int client, int index, bool defaultKnife = false)
 public Action ReserveAmmoTimer(Handle timer, Handle pack)
 {
 	ResetPack(pack);
-	int clientIndex = ReadPackCell(pack);
+	int clientIndex = GetClientOfUserId(ReadPackCell(pack));
 	int offset = ReadPackCell(pack);
 	int ammo = ReadPackCell(pack);
 	
-	if(IsClientInGame(clientIndex))
+	if(clientIndex > 0 && IsClientInGame(clientIndex))
 	{
 		SetEntData(clientIndex, offset, ammo, 4, true);
 	}
